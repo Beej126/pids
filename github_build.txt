@@ -1,0 +1,9 @@
+- name: Update "latest" tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          git fetch --tags
+          $latestTag = git describe --tags --abbrev=0
+          git tag -f latest $latestTag
+          git push origin latest --force

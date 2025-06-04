@@ -1,0 +1,73 @@
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: build
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+
+  build:
+  
+    runs-on: windows-latest
+    
+    steps:
+    
+    - uses: actions/checkout@v4
+      with:
+        # _____                         _____                           _              _   
+        #/  ___|                       |_   _|                         | |            | |  
+        #\ `--. _   _ _ __   ___ _ __    | | _ __ ___  _ __   ___  _ __| |_ __ _ _ __ | |_ 
+        # `--. \ | | | '_ \ / _ \ '__|   | || '_ ` _ \| '_ \ / _ \| '__| __/ _` | '_ \| __|
+        #/\__/ / |_| | |_) |  __/ |     _| || | | | | | |_) | (_) | |  | || (_| | | | | |_ 
+        #\____/ \__,_| .__/ \___|_|     \___/_| |_| |_| .__/ \___/|_|   \__\__,_|_| |_|\__|
+        #            | |                              | |                                  
+        #            |_|                              |_|                                  
+        # for release notes to be able to query into the tags data!!
+        fetch-depth: 0
+        fetch-tags: true
+
+    - name: install Go v1.24.x
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24.x'
+
+    - name: Install go-winres
+      run: go install github.com/tc-hib/go-winres@latest
+
+    - name: Build (and generate script variables)
+      id: buildAsset
+      run: |
+        # same as the release builder's previous tag query logic but this facilitates +1'ing the new release number
+        # https://github.com/mikepenz/release-changelog-builder-action/blob/9d5249982e67893edf0382587243ff5fb50580c2/src/pr-collector/gitHelper.ts#L21
+
+        # how to create *step output variables* in pwsh: https://stackoverflow.com/questions/69099977/using-outputs-of-powershell-in-github-actions/75630489#75630489
+        $lastRelease="$(git describe --abbrev=0 --tags $(git rev-list --tags --skip=0 --max-count=1))"
+        Write-Output "fromTag=$($lastRelease)" >> $Env:GITHUB_OUTPUT
+
+        $newRelease="v1.0.0.$([int]$lastRelease.split(".")[3]+1)"
+        Write-Output "newRelease=$($newRelease)" >> $Env:GITHUB_OUTPUT
+
+        go-winres make --file-version=$newRelease --product-version=$newRelease
+        go build -v ./...
+
+    # https://github.com/marketplace/actions/release-changelog-builder
+    - name: Generate release notes
+      id: releaseNotes
+      uses: mikepenz/release-changelog-builder-action@v5
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        mode: "COMMIT" # "COMMIT" mode builds release notes as a bulleted list of commit messages since the **previous** release **tag**
+        outputFile: notes.md
+        fromTag: ${{ steps.buildAsset.outputs.fromTag }}
+
+    # gh command reference: https://cli.github.com/manual/
+    - name: Create release (with new .exe asset attached)
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+      # the first argument to `gh release create` is the TAG that will be created and applied to this new release
+      run: |
+        gh release create ${{ steps.buildAsset.outputs.newRelease }} pids.exe --notes-file notes.md      
