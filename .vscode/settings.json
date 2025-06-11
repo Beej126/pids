@@ -1,0 +1,9 @@
+{
+    "go.lintTool": "staticcheck",
+    "go.lintFlags": [],
+    "gopls": {
+        "analyses": {
+            "printf": false //ignore warning from gopls's built in linting
+        }
+    }
+}
