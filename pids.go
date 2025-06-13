@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/shirou/gopsutil/process"
 )
@@ -30,20 +31,38 @@ func usage() {
 	fmt.Println("  -pid [-level N]      # Output PID for the Nth parent (default 0 = current process)")
 }
 
-func getProcessChain() ([]*process.Process, error) {
+func getProcessChain(showVars bool) ([]*process.Process, error) {
 	proc, err := process.NewProcess(int32(os.Getpid()))
 	if err != nil {
 		return nil, err
 	}
 	var chain []*process.Process
+	var i int = 0
 	for proc != nil {
+
+		if showVars {
+			pid := proc.Pid
+			name, err := proc.Name()
+			if err != nil {
+				name = "Unknown"
+			}
+			fmt.Printf("set PID%d=%d\n", i, pid)
+			fmt.Printf("set ProcessName%d=%s\n", i, name)
+		}
+
 		chain = append(chain, proc)
 		parent, err := proc.Parent()
 		if err != nil || parent == nil {
 			break
 		}
 		proc = parent
+		i++
 	}
+
+	if showVars {
+		fmt.Println()
+	}
+
 	return chain, nil
 }
 
@@ -70,25 +89,19 @@ func main() {
 		fmt.Println("-------------")
 	}
 
-	chain, err := getProcessChain()
+	chain, err := getProcessChain(*showVars || helpMerged)
 	if err != nil {
 		log.Fatalf("Error getting process chain: %v\n", err)
 	}
 
-	if *showVars || helpMerged {
-		for i, proc := range chain {
-			pid := proc.Pid
-			name, err := proc.Name()
-			if err != nil {
-				name = "Unknown"
-			}
-			fmt.Printf("set PID%d=%d\n", i, pid)
-			fmt.Printf("set ProcessName%d=%s\n", i, name)
+	// pause if parent process is explorer.exe so user can see output
+	if helpMerged && len(chain) > 1 {
+		parentName, err := chain[1].Name()
+		if err == nil && strings.ToLower(parentName) == "explorer.exe" {
+			fmt.Print("Press Enter to exit...")
+			_, _ = fmt.Scanln()
+			return
 		}
-		if helpMerged {
-			fmt.Println()
-		}
-		return
 	}
 
 	// Parse level
@@ -118,4 +131,5 @@ func main() {
 		fmt.Println(version)
 		return
 	}
+
 }
